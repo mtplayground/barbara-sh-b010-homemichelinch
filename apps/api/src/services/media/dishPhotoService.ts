@@ -2,7 +2,10 @@ import { createHash } from "node:crypto";
 
 import { z, ZodError } from "zod";
 
-import { loadConfig } from "../../config/env.js";
+import {
+  loadOptionalIntegrationConfig,
+  loadOptionalObjectStorageConfig,
+} from "../../config/env.js";
 import { retry } from "../retry.js";
 import { ObjectStorageService, type StoredObject } from "./objectStorageService.js";
 
@@ -122,21 +125,21 @@ export class DishPhotoServiceError extends Error {
 }
 
 export class DishPhotoService {
-  private readonly storage: Pick<ObjectStorageService, "getIfExists" | "putObject">;
+  private readonly storage?: Pick<ObjectStorageService, "getIfExists" | "putObject">;
   private readonly imageSearchClient: ImageSearchClient;
   private readonly aiImageGenerator: AiImageGenerator;
   private readonly fetcher: typeof fetch;
 
   constructor(options: DishPhotoServiceOptions = {}) {
-    const config =
-      options.storage && options.imageSearchClient ? undefined : loadConfig();
+    const integrationConfig = options.imageSearchClient
+      ? undefined
+      : loadOptionalIntegrationConfig();
     this.fetcher = options.fetcher ?? fetch;
-    this.storage =
-      options.storage ?? new ObjectStorageService({ config: config?.objectStorage });
+    this.storage = options.storage ?? createOptionalObjectStorageService();
     this.imageSearchClient =
       options.imageSearchClient ??
       new PexelsImageSearchClient({
-        apiKey: config?.media.imageApiKey ?? loadConfig().media.imageApiKey,
+        apiKey: integrationConfig?.imageApiKey,
         fetcher: this.fetcher,
       });
     this.aiImageGenerator =
@@ -146,15 +149,20 @@ export class DishPhotoService {
       });
   }
 
-  async getDishPhoto(dishName: string): Promise<DishPhotoResult> {
+  async getDishPhoto(dishName: string): Promise<DishPhotoResult | null> {
     const normalizedDishName = dishName.trim();
 
     if (!normalizedDishName) {
       throw new DishPhotoServiceError("Dish name is required for photo lookup");
     }
 
+    if (!this.storage) {
+      return null;
+    }
+    const storage = this.storage;
+
     const relativeKey = toDishPhotoRelativeKey(normalizedDishName);
-    const cached = await this.storage.getIfExists(relativeKey);
+    const cached = await storage.getIfExists(relativeKey);
 
     if (cached) {
       return toDishPhotoResult({
@@ -165,7 +173,7 @@ export class DishPhotoService {
       });
     }
 
-    const searchedPhoto = await this.findSearchPhoto(normalizedDishName);
+    const searchedPhoto = await this.findSearchPhoto(normalizedDishName, storage);
 
     if (searchedPhoto) {
       return searchedPhoto;
@@ -179,7 +187,7 @@ export class DishPhotoService {
         shouldRetry: isRetryableDishPhotoError,
       },
     );
-    const stored = await this.storage.putObject({
+    const stored = await storage.putObject({
       relativeKey,
       body: generated.body,
       contentType: generated.contentType,
@@ -194,7 +202,10 @@ export class DishPhotoService {
     });
   }
 
-  private async findSearchPhoto(dishName: string): Promise<DishPhotoResult | null> {
+  private async findSearchPhoto(
+    dishName: string,
+    storage: Pick<ObjectStorageService, "putObject">,
+  ): Promise<DishPhotoResult | null> {
     const candidate = await retry(() => this.imageSearchClient.search(dishName), {
       attempts: 2,
       delayMs: 350,
@@ -213,7 +224,7 @@ export class DishPhotoService {
         shouldRetry: isRetryableDishPhotoError,
       },
     );
-    const stored = await this.storage.putObject({
+    const stored = await storage.putObject({
       relativeKey: toDishPhotoRelativeKey(dishName),
       body: downloaded.body,
       contentType: downloaded.contentType,
@@ -231,15 +242,19 @@ export class DishPhotoService {
 }
 
 class PexelsImageSearchClient implements ImageSearchClient {
-  private readonly apiKey: string;
+  private readonly apiKey?: string;
   private readonly fetcher: typeof fetch;
 
-  constructor(options: { apiKey: string; fetcher: typeof fetch }) {
+  constructor(options: { apiKey?: string; fetcher: typeof fetch }) {
     this.apiKey = options.apiKey;
     this.fetcher = options.fetcher;
   }
 
   async search(dishName: string): Promise<ImageSearchCandidate | null> {
+    if (!this.apiKey) {
+      return null;
+    }
+
     const params = new URLSearchParams({
       query: `${dishName} plated dish food`,
       per_page: "12",
@@ -273,6 +288,12 @@ class PexelsImageSearchClient implements ImageSearchClient {
 
     return best && best.score >= MIN_SEARCH_SCORE ? best : null;
   }
+}
+
+function createOptionalObjectStorageService(): ObjectStorageService | undefined {
+  const config = loadOptionalObjectStorageConfig();
+
+  return config ? new ObjectStorageService({ config }) : undefined;
 }
 
 class PollinationsAiImageGenerator implements AiImageGenerator {

@@ -41,14 +41,22 @@ const booleanEnvSchema = z
     return z.NEVER;
   });
 
-const envSchema = z.object({
+const bootEnvSchema = z.object({
   HOST: z.string().min(1).default("0.0.0.0"),
   PORT: portSchema.default(8080),
   DATABASE_URL: postgresUrlSchema,
   CLAUDE_API_KEY: z.string().min(1),
   CLAUDE_MODEL: z.string().min(1).default("claude-sonnet-4-6"),
-  YOUTUBE_API_KEY: z.string().min(1),
-  IMAGE_API_KEY: z.string().min(1),
+  YOUTUBE_API_KEY: z.string().min(1).optional(),
+  IMAGE_API_KEY: z.string().min(1).optional(),
+});
+
+const optionalIntegrationEnvSchema = z.object({
+  YOUTUBE_API_KEY: z.string().min(1).optional(),
+  IMAGE_API_KEY: z.string().min(1).optional(),
+});
+
+const objectStorageEnvSchema = z.object({
   OBJECT_STORAGE_ACCESS_KEY_ID: z.string().min(1),
   OBJECT_STORAGE_SECRET_ACCESS_KEY: z.string().min(1),
   OBJECT_STORAGE_BUCKET: z.string().min(1),
@@ -63,6 +71,16 @@ const envSchema = z.object({
   OBJECT_STORAGE_FORCE_PATH_STYLE: booleanEnvSchema.default(true),
 });
 
+const objectStorageEnvKeys = [
+  "OBJECT_STORAGE_ACCESS_KEY_ID",
+  "OBJECT_STORAGE_SECRET_ACCESS_KEY",
+  "OBJECT_STORAGE_BUCKET",
+  "OBJECT_STORAGE_PREFIX",
+  "OBJECT_STORAGE_ENDPOINT",
+  "OBJECT_STORAGE_REGION",
+  "OBJECT_STORAGE_FORCE_PATH_STYLE",
+] as const;
+
 export interface AppConfig {
   server: {
     host: string;
@@ -76,29 +94,33 @@ export interface AppConfig {
     claudeModel: string;
   };
   media: {
-    youtubeApiKey: string;
-    imageApiKey: string;
-  };
-  objectStorage: {
-    accessKeyId: string;
-    secretAccessKey: string;
-    bucket: string;
-    prefix: string;
-    endpoint: string;
-    region: string;
-    forcePathStyle: boolean;
+    youtubeApiKey?: string;
+    imageApiKey?: string;
   };
 }
 
+export interface ObjectStorageConfig {
+  accessKeyId: string;
+  secretAccessKey: string;
+  bucket: string;
+  prefix: string;
+  endpoint: string;
+  region: string;
+  forcePathStyle: boolean;
+}
+
+export interface OptionalIntegrationConfig {
+  youtubeApiKey?: string;
+  imageApiKey?: string;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
-  const parsed = envSchema.safeParse(env);
+  const parsed = bootEnvSchema.safeParse(env);
 
   if (!parsed.success) {
-    const details = parsed.error.issues
-      .map((issue) => `${issue.path.join(".") || "ENV"}: ${issue.message}`)
-      .join("; ");
-
-    throw new Error(`Invalid environment configuration: ${details}`);
+    throw new Error(
+      `Invalid environment configuration: ${formatZodIssues(parsed.error.issues)}`,
+    );
   }
 
   return {
@@ -117,14 +139,56 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       youtubeApiKey: parsed.data.YOUTUBE_API_KEY,
       imageApiKey: parsed.data.IMAGE_API_KEY,
     },
-    objectStorage: {
-      accessKeyId: parsed.data.OBJECT_STORAGE_ACCESS_KEY_ID,
-      secretAccessKey: parsed.data.OBJECT_STORAGE_SECRET_ACCESS_KEY,
-      bucket: parsed.data.OBJECT_STORAGE_BUCKET,
-      prefix: parsed.data.OBJECT_STORAGE_PREFIX,
-      endpoint: parsed.data.OBJECT_STORAGE_ENDPOINT,
-      region: parsed.data.OBJECT_STORAGE_REGION,
-      forcePathStyle: parsed.data.OBJECT_STORAGE_FORCE_PATH_STYLE,
-    },
   };
+}
+
+export function loadObjectStorageConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): ObjectStorageConfig {
+  const parsed = objectStorageEnvSchema.safeParse(env);
+
+  if (!parsed.success) {
+    throw new Error(
+      `Invalid object storage configuration: ${formatZodIssues(parsed.error.issues)}`,
+    );
+  }
+
+  return {
+    accessKeyId: parsed.data.OBJECT_STORAGE_ACCESS_KEY_ID,
+    secretAccessKey: parsed.data.OBJECT_STORAGE_SECRET_ACCESS_KEY,
+    bucket: parsed.data.OBJECT_STORAGE_BUCKET,
+    prefix: parsed.data.OBJECT_STORAGE_PREFIX,
+    endpoint: parsed.data.OBJECT_STORAGE_ENDPOINT,
+    region: parsed.data.OBJECT_STORAGE_REGION,
+    forcePathStyle: parsed.data.OBJECT_STORAGE_FORCE_PATH_STYLE,
+  };
+}
+
+export function loadOptionalIntegrationConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): OptionalIntegrationConfig {
+  const parsed = optionalIntegrationEnvSchema.parse(env);
+
+  return {
+    youtubeApiKey: parsed.YOUTUBE_API_KEY,
+    imageApiKey: parsed.IMAGE_API_KEY,
+  };
+}
+
+export function loadOptionalObjectStorageConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): ObjectStorageConfig | undefined {
+  const hasAnyStorageEnv = objectStorageEnvKeys.some((key) => env[key]);
+
+  if (!hasAnyStorageEnv) {
+    return undefined;
+  }
+
+  return loadObjectStorageConfig(env);
+}
+
+function formatZodIssues(issues: z.core.$ZodIssue[]): string {
+  return issues
+    .map((issue) => `${issue.path.join(".") || "ENV"}: ${issue.message}`)
+    .join("; ");
 }
