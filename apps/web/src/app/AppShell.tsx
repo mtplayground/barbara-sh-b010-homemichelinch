@@ -361,12 +361,7 @@ function GuidePreview({
       <IngredientsBlock guide={guide} />
       <RecipeBlock guide={guide} />
 
-      <section className="rounded-lg border border-border bg-background/45 p-4">
-        <h3 className="text-xl">{guide.michelinRewrite.title}</h3>
-        <p className="mt-3 text-sm text-muted-foreground">
-          {guide.michelinRewrite.description}
-        </p>
-      </section>
+      <MichelinChefMode guide={guide} />
     </div>
   );
 }
@@ -435,6 +430,9 @@ function IngredientsBlock({ guide }: { guide: GuideResponse["guide"] }) {
 }
 
 function RecipeBlock({ guide }: { guide: GuideResponse["guide"] }) {
+  const speech = useSpeechSynthesis();
+  const recipeNarration = buildRecipeNarration(guide);
+
   return (
     <section className="rounded-lg border border-border bg-background/45 p-4">
       <div className="flex flex-col gap-3 border-b border-border/70 pb-4 sm:flex-row sm:items-start sm:justify-between">
@@ -442,10 +440,35 @@ function RecipeBlock({ guide }: { guide: GuideResponse["guide"] }) {
           <p className="overline">Recipe</p>
           <h3 className="mt-1 text-2xl">Method</h3>
         </div>
-        <Badge variant="gold">
-          <BookOpen className="mr-1 size-3.5" aria-hidden="true" />
-          {guide.recipe.steps.length} steps
-        </Badge>
+        <div className="flex flex-col gap-2 sm:items-end">
+          <Badge variant="gold">
+            <BookOpen className="mr-1 size-3.5" aria-hidden="true" />
+            {guide.recipe.steps.length} steps
+          </Badge>
+          {speech.isSupported ? (
+            <Button
+              className="w-full sm:w-auto"
+              onClick={() => {
+                if (speech.isSpeaking) {
+                  speech.cancel();
+                  return;
+                }
+
+                speech.speak(recipeNarration, { lang: "en-US", rate: 0.9 });
+              }}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {speech.isSpeaking ? (
+                <VolumeX className="size-4" aria-hidden="true" />
+              ) : (
+                <Volume2 className="size-4" aria-hidden="true" />
+              )}
+              {speech.isSpeaking ? "Stop reading" : "Read recipe aloud"}
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <ol className="mt-5 space-y-4">
@@ -500,6 +523,93 @@ function RecipeBlock({ guide }: { guide: GuideResponse["guide"] }) {
       </div>
     </section>
   );
+}
+
+function MichelinChefMode({ guide }: { guide: GuideResponse["guide"] }) {
+  return (
+    <section className="rounded-lg border border-gold/35 bg-gold-soft/55 p-4 shadow-gold">
+      <div className="flex flex-col gap-3 border-b border-gold/30 pb-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="overline text-primary">Michelin Chef Mode</p>
+          <h3 className="mt-1 text-2xl">{guide.michelinRewrite.title}</h3>
+        </div>
+        <Badge variant="wine">
+          <Sparkles className="mr-1 size-3.5" aria-hidden="true" />
+          Chef finish
+        </Badge>
+      </div>
+
+      <p className="mt-5 text-base leading-7 text-foreground">
+        {guide.michelinRewrite.description}
+      </p>
+
+      {guide.michelinRewrite.techniqueNotes.length > 0 ? (
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          {guide.michelinRewrite.techniqueNotes.map((note) => (
+            <div
+              className="rounded-md border border-gold/30 bg-background/65 p-4"
+              key={note}
+            >
+              <div className="flex gap-3">
+                <span className="mt-1 flex size-6 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+                  <Sparkles className="size-3.5" aria-hidden="true" />
+                </span>
+                <p className="text-sm leading-6 text-muted-foreground">{note}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function buildRecipeNarration(guide: GuideResponse["guide"]): string {
+  const ingredientNarration = getOrderedIngredientGroups(guide.ingredients)
+    .map((group) => {
+      const items = group.items
+        .map((ingredient) => {
+          const note = ingredient.notes ? `, ${ingredient.notes}` : "";
+          return `${ingredient.name}, ${ingredient.metric}, or ${ingredient.us}${note}`;
+        })
+        .join("; ");
+
+      return `${group.group}: ${items}.`;
+    })
+    .join("\n");
+
+  const stepNarration = guide.recipe.steps
+    .map((step) => {
+      const duration =
+        step.durationMinutes !== undefined ? ` ${step.durationMinutes} minutes.` : "";
+      const cues = step.cues.length > 0 ? ` Look for ${step.cues.join(", ")}.` : "";
+      return `Step ${step.order}. ${step.title}. ${step.instruction}${duration}${cues}`;
+    })
+    .join("\n");
+
+  const chefTips =
+    guide.chefTips.length > 0 ? `Chef tips. ${guide.chefTips.join(". ")}.` : "";
+  const commonMistakes =
+    guide.commonMistakes.length > 0
+      ? `Common mistakes. ${guide.commonMistakes.join(". ")}.`
+      : "";
+  const platingGarnishes =
+    guide.plating.garnishes.length > 0
+      ? ` Garnish with ${guide.plating.garnishes.join(", ")}.`
+      : "";
+
+  return [
+    `${guide.title}. ${guide.originalName}.`,
+    `Serves ${guide.recipe.servings}. Prep time ${guide.recipe.prepTimeMinutes} minutes. Cook time ${guide.recipe.cookTimeMinutes} minutes. Total time ${guide.recipe.totalTimeMinutes} minutes. Difficulty ${guide.recipe.difficulty}.`,
+    `Ingredients.\n${ingredientNarration}`,
+    `Method.\n${stepNarration}`,
+    chefTips,
+    commonMistakes,
+    `Plating. ${guide.plating.description}.${platingGarnishes}`,
+    `Michelin Chef Mode. ${guide.michelinRewrite.title}. ${guide.michelinRewrite.description}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function GuidanceList({
