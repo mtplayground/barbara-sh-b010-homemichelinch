@@ -1,53 +1,49 @@
 # Architecture Plan
 
-## Product Scope
+## Scope
 
-Build a full-stack dish guide app for Chinese dishes. The frontend collects a dish name and renders a polished, Michelin-style guide with title, pronunciation, photo, video, grouped ingredients, recipe, chef guidance, and read-aloud support. The backend normalizes input, checks a PostgreSQL cache, generates structured guide content with Claude, enriches it with YouTube and dish photo media, persists the result, and returns a single guide payload.
+This setup session prepares the existing `barbara-sh-b010-homemichelinch` TypeScript monorepo for four backend hardening issues:
+
+- #35: require only essential env vars at startup and make unused integrations optional.
+- #36: add a deep `/api/health` readiness check for DB/schema/Claude config.
+- #37: run or verify the `dish_guides` migration automatically on startup.
+- #38: surface actionable startup/runtime errors for connectivity and generation failures.
+
+The product remains a full-stack Chinese dish guide app: the React frontend submits a dish name, the Express backend checks the PostgreSQL `dish_guides` cache, generates Claude-backed recipe content, and optionally enriches responses with video/photo media.
 
 ## Module Structure
 
-- `apps/web/`: Vite + React + TypeScript frontend.
-  - `src/app/`: app shell, routing-level composition, providers.
-  - `src/components/ui/`: shadcn/ui primitives and local design-system wrappers.
-  - `src/components/guide/`: title/pronunciation, media, ingredients, recipe, Michelin rewrite, skeleton and error states.
-  - `src/features/guide/`: input form, React Query mutation, API client, guide state orchestration.
-  - `src/hooks/`: `useSpeechSynthesis` and small UI hooks.
-  - `src/styles/`: Tailwind theme tokens, base typography, global CSS.
-- `apps/api/`: Express + TypeScript backend.
-  - `src/config/`: typed environment loader and validation.
-  - `src/routes/guide.ts`: `POST /api/guide` request validation and response mapping.
-  - `src/services/generation/`: Claude prompt, Zod schema, structured parsing, closest-match handling.
-  - `src/services/media/`: YouTube search/ranking and dish photo lookup/generation.
-  - `src/services/cache/`: dish name normalization and `dish_guides` repository.
-  - `src/db/`: PostgreSQL client, migrations, schema helpers.
-  - `src/middleware/`: centralized errors, request logging, retries/timeouts where appropriate.
-  - `src/types/`: shared backend domain types, derived from Zod schemas where possible.
-- `packages/shared/`: shared TypeScript contracts for guide request/response payloads, generated from or aligned with Zod schemas.
-- `tests/`: backend unit tests and later end-to-end smoke coverage.
-
-## Shared Types
-
-- `GuideRequest`: raw user dish input.
-- `NormalizedDish`: normalized cache key and display/source names.
-- `GeneratedGuide`: Claude-only structured output: titles, pronunciation, grouped ingredients, recipe metadata, steps, tips, mistakes, plating, Michelin rewrite, and closest-match metadata.
-- `GuideMedia`: optional YouTube video ID/embed URL, dish photo URL, attribution/source, and fallback reason.
-- `GuideResponse`: assembled payload returned by `/api/guide`, including cache metadata and user-facing error or closest-match messaging.
+- `apps/api/src/config/env.ts`
+  - Split configuration into boot-critical settings and lazy integration settings.
+  - Boot-critical: `DATABASE_URL`, `CLAUDE_API_KEY`, server host/port.
+  - Lazy optional: `YOUTUBE_API_KEY`, `IMAGE_API_KEY`, and object storage settings.
+- `apps/api/src/db/`
+  - Keep PostgreSQL connection helpers and migration runner here.
+  - Add reusable readiness/schema helpers so health checks and startup migration verification do not duplicate SQL.
+- `apps/api/src/routes/`
+  - Keep `POST /api/guide` in `routes/guide.ts`.
+  - Extend `/api/health` from a static response to a dependency-aware readiness endpoint.
+- `apps/api/src/services/`
+  - Generation service remains Claude-backed and should fail with explicit auth/generation errors.
+  - Media services should degrade gracefully when optional credentials are absent.
+  - Cache repository owns `dish_guides` access and should expose table-existence or lightweight query helpers when useful.
+- `apps/api/src/middleware/errors.ts`
+  - Centralize HTTP error mapping, structured response envelopes, and full server-side logging.
+- `packages/shared/src/`
+  - Keep shared health and guide response contracts here when frontend/backend both need the shape.
 
 ## Issue Dependencies
 
-- Foundation: #1 creates the monorepo shape, scripts, TypeScript, lint/format, static serving.
-- Configuration: #2 adds typed env and `.env.example`; backend services should not read `process.env` directly after this.
-- Design shell: #3 defines Tailwind/shadcn tokens; #4 builds the responsive left-input/right-result layout on top of them.
-- Backend data and generation: #5 creates the cache table; #6 defines Claude generation and the schema; #7 orchestrates normalize -> cache -> generate/media -> persist -> return.
-- Media enrichment: #8 YouTube and #9 dish photo services plug into #7 and should be independently mockable.
-- Frontend data flow: #10 adds React Query and loading/error states against #7; #11-#14 progressively render the guide blocks and speech features.
-- Quality and release prep: #15 backend unit tests, #16 end-to-end smoke test, #17 final error handling, logging, and self-hosted deployment documentation.
+- #35 should land first because #36 and #38 depend on knowing which env vars are essential versus optional.
+- #37 should land before or alongside #36 so the readiness check can distinguish "DB reachable" from "schema missing" and startup can make schema presence deterministic.
+- #36 uses the config split from #35 and the migration/schema helpers from #37.
+- #38 depends on all prior work so it can map known failures precisely: invalid config, DB unreachable, missing `dish_guides`, migration failure, Claude auth, and Claude generation errors.
 
 ## Key Design Decisions
 
-- Use Zod schemas as the contract boundary for external AI output, API responses, and env validation to keep backend behavior testable.
-- Keep cache records keyed by normalized dish name while storing the full guide/media JSON to avoid regenerating expensive content.
-- Treat media services as optional enrichments: return the guide when a video/photo is missing, with explicit fallback metadata for the UI.
-- Keep frontend rendering block-based so issues #11-#14 can land independently without changing the API contract each time.
-- Use React Query only at the API boundary; presentational guide components receive typed props and stay deterministic.
-- Centralize retries, timeouts, and error mapping in backend service wrappers so issue #17 can audit one consistent failure path.
+- Do not validate optional integrations at process boot. Validate YouTube, image search, and object storage only inside the services that use them, and return partial media or skipped enrichment when absent.
+- Keep PostgreSQL required. The app cache and readiness work center on the existing `dish_guides` table.
+- Use a single migration path for both manual deploys and startup verification. Startup should either apply migrations idempotently or verify they have already run, then log a clear failure before serving traffic if the schema is not usable.
+- Make `/api/health` dependency-aware but safe: it should return structured JSON with per-dependency status rather than throwing opaque 500s.
+- Preserve the SPA/API split: `/api/*` returns JSON; non-API routes serve the built React app.
+- Error responses should be actionable for the frontend but not leak secrets. Logs should include full internal error context, including error name, code, message, stack, and relevant dependency status.
