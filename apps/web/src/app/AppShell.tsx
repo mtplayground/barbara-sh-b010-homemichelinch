@@ -3,10 +3,14 @@ import { useMutation } from "@tanstack/react-query";
 import type { GuideResponse } from "@app/shared";
 import {
   AlertCircle,
+  AlertTriangle,
+  BookOpen,
   CheckCircle2,
   ChefHat,
   Clock3,
   ImageIcon,
+  Lightbulb,
+  ListChecks,
   Loader2,
   PlayCircle,
   RefreshCcw,
@@ -27,6 +31,7 @@ import { createGuide, GuideApiError } from "@/features/guide/api";
 import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
 
 type FormError = string | null;
+const INGREDIENT_GROUP_ORDER = ["Main", "Marinade & Seasoning", "Sauce", "Garnish"];
 
 export function AppShell() {
   const [dish, setDish] = useState("");
@@ -348,48 +353,13 @@ function GuidePreview({
 
       <div className="grid gap-5 lg:grid-cols-[0.85fr_1.15fr]">
         <DishTitlePronunciation guide={guide} />
-
-        <div className="grid gap-3 sm:grid-cols-3">
-          <GuideMetric label="Difficulty" value={guide.recipe.difficulty} />
-          <GuideMetric label="Total" value={`${guide.recipe.totalTimeMinutes} min`} />
-          <GuideMetric label="Serves" value={String(guide.recipe.servings)} />
-        </div>
+        <RecipeStats guide={guide} />
       </div>
 
       <MediaBlocks media={response.media} title={guide.title} />
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        <section className="rounded-lg border border-border bg-background/45 p-4">
-          <h3 className="text-xl">Ingredients</h3>
-          <div className="mt-4 space-y-3">
-            {guide.ingredients.slice(0, 3).map((group) => (
-              <div key={group.group}>
-                <p className="text-sm font-semibold">{group.group}</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {group.items
-                    .slice(0, 3)
-                    .map((item) => item.name)
-                    .join(", ")}
-                </p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="rounded-lg border border-border bg-background/45 p-4">
-          <h3 className="text-xl">First steps</h3>
-          <ol className="mt-4 space-y-3">
-            {guide.recipe.steps.slice(0, 3).map((step) => (
-              <li className="text-sm text-muted-foreground" key={step.order}>
-                <span className="font-semibold text-foreground">
-                  {step.order}. {step.title}
-                </span>
-                <span className="block">{step.instruction}</span>
-              </li>
-            ))}
-          </ol>
-        </section>
-      </div>
+      <IngredientsBlock guide={guide} />
+      <RecipeBlock guide={guide} />
 
       <section className="rounded-lg border border-border bg-background/45 p-4">
         <h3 className="text-xl">{guide.michelinRewrite.title}</h3>
@@ -399,6 +369,198 @@ function GuidePreview({
       </section>
     </div>
   );
+}
+
+function RecipeStats({ guide }: { guide: GuideResponse["guide"] }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <GuideMetric label="Prep" value={`${guide.recipe.prepTimeMinutes} min`} />
+      <GuideMetric label="Cook" value={`${guide.recipe.cookTimeMinutes} min`} />
+      <GuideMetric label="Total" value={`${guide.recipe.totalTimeMinutes} min`} />
+      <GuideMetric label="Serves" value={String(guide.recipe.servings)} />
+      <GuideMetric label="Difficulty" value={guide.recipe.difficulty} />
+    </div>
+  );
+}
+
+function IngredientsBlock({ guide }: { guide: GuideResponse["guide"] }) {
+  const orderedGroups = getOrderedIngredientGroups(guide.ingredients);
+
+  return (
+    <section className="rounded-lg border border-border bg-background/45 p-4">
+      <div className="flex flex-col gap-3 border-b border-border/70 pb-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="overline">Ingredients</p>
+          <h3 className="mt-1 text-2xl">Mise en place</h3>
+        </div>
+        <Badge variant="outline">
+          <ListChecks className="mr-1 size-3.5" aria-hidden="true" />
+          {orderedGroups.reduce((total, group) => total + group.items.length, 0)} items
+        </Badge>
+      </div>
+
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        {orderedGroups.map((group) => (
+          <div
+            className="rounded-md border border-border/70 bg-background/70 p-4"
+            key={group.group}
+          >
+            <h4 className="text-lg">{group.group}</h4>
+            <div className="mt-3 divide-y divide-border/60">
+              {group.items.map((ingredient) => (
+                <div
+                  className="grid gap-2 py-3 first:pt-0 last:pb-0 sm:grid-cols-[minmax(0,1fr)_minmax(120px,0.35fr)_minmax(120px,0.35fr)]"
+                  key={`${group.group}-${ingredient.name}-${ingredient.metric}`}
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-foreground">
+                      {ingredient.name}
+                    </p>
+                    {ingredient.notes ? (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {ingredient.notes}
+                      </p>
+                    ) : null}
+                  </div>
+                  <p className="text-sm text-muted-foreground">{ingredient.metric}</p>
+                  <p className="text-sm text-muted-foreground">{ingredient.us}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function RecipeBlock({ guide }: { guide: GuideResponse["guide"] }) {
+  return (
+    <section className="rounded-lg border border-border bg-background/45 p-4">
+      <div className="flex flex-col gap-3 border-b border-border/70 pb-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="overline">Recipe</p>
+          <h3 className="mt-1 text-2xl">Method</h3>
+        </div>
+        <Badge variant="gold">
+          <BookOpen className="mr-1 size-3.5" aria-hidden="true" />
+          {guide.recipe.steps.length} steps
+        </Badge>
+      </div>
+
+      <ol className="mt-5 space-y-4">
+        {guide.recipe.steps.map((step) => (
+          <li
+            className="rounded-md border border-border/70 bg-background/70 p-4"
+            key={step.order}
+          >
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex min-w-0 gap-3">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary text-sm font-semibold text-primary-foreground">
+                  {step.order}
+                </span>
+                <div className="min-w-0">
+                  <h4 className="text-lg">{step.title}</h4>
+                  <p className="mt-2 text-sm text-muted-foreground">{step.instruction}</p>
+                </div>
+              </div>
+              {step.durationMinutes !== undefined ? (
+                <Badge className="shrink-0" variant="outline">
+                  <Clock3 className="mr-1 size-3.5" aria-hidden="true" />
+                  {step.durationMinutes} min
+                </Badge>
+              ) : null}
+            </div>
+
+            {step.cues.length > 0 ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {step.cues.map((cue) => (
+                  <Badge key={`${step.order}-${cue}`} variant="secondary">
+                    {cue}
+                  </Badge>
+                ))}
+              </div>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+
+      <div className="mt-5 grid gap-5 lg:grid-cols-3">
+        <GuidanceList
+          icon={<Lightbulb className="size-4" aria-hidden="true" />}
+          items={guide.chefTips}
+          title="Chef tips"
+        />
+        <GuidanceList
+          icon={<AlertTriangle className="size-4" aria-hidden="true" />}
+          items={guide.commonMistakes}
+          title="Common mistakes"
+        />
+        <PlatingBlock guide={guide} />
+      </div>
+    </section>
+  );
+}
+
+function GuidanceList({
+  icon,
+  items,
+  title,
+}: {
+  icon: ReactNode;
+  items: string[];
+  title: string;
+}) {
+  return (
+    <div className="rounded-md border border-border/70 bg-background/70 p-4">
+      <div className="flex items-center gap-2">
+        <span className="text-primary">{icon}</span>
+        <h4 className="text-lg">{title}</h4>
+      </div>
+      <ul className="mt-3 space-y-2">
+        {items.map((item) => (
+          <li className="text-sm text-muted-foreground" key={item}>
+            {item}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function PlatingBlock({ guide }: { guide: GuideResponse["guide"] }) {
+  return (
+    <div className="rounded-md border border-border/70 bg-background/70 p-4">
+      <div className="flex items-center gap-2">
+        <span className="text-primary">
+          <Sparkles className="size-4" aria-hidden="true" />
+        </span>
+        <h4 className="text-lg">Plating</h4>
+      </div>
+      <p className="mt-3 text-sm text-muted-foreground">{guide.plating.description}</p>
+      {guide.plating.garnishes.length > 0 ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {guide.plating.garnishes.map((garnish) => (
+            <Badge key={garnish} variant="gold">
+              {garnish}
+            </Badge>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function getOrderedIngredientGroups(groups: GuideResponse["guide"]["ingredients"]) {
+  return [...groups].sort((left, right) => {
+    const leftIndex = INGREDIENT_GROUP_ORDER.indexOf(left.group);
+    const rightIndex = INGREDIENT_GROUP_ORDER.indexOf(right.group);
+    return normalizeSortIndex(leftIndex) - normalizeSortIndex(rightIndex);
+  });
+}
+
+function normalizeSortIndex(index: number): number {
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index;
 }
 
 function MediaBlocks({ media, title }: { media: GuideResponse["media"]; title: string }) {
