@@ -7,7 +7,7 @@ import { z } from "zod";
 
 import { createPostgresConnectionConfig } from "./connection.js";
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const postgresUrlSchema = z
   .string()

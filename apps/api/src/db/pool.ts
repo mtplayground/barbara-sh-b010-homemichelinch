@@ -1,7 +1,9 @@
 import pg from "pg";
 
-import { config } from "../config/env.js";
+import { loadConfig } from "../config/env.js";
 import { createPostgresConnectionConfig } from "./connection.js";
+
+const config = loadConfig();
 
 export const pool = new pg.Pool({
   ...createPostgresConnectionConfig(config.database.url),

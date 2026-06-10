@@ -11,6 +11,7 @@
     "start": "node dist/server.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.104.1",
     "@app/shared": "0.1.0",
     "dotenv": "^17.4.2",
     "express": "^5.1.0",
