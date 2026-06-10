@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 interface SpeakOptions {
   lang?: string;
@@ -38,10 +38,6 @@ export function useSpeechSynthesis(): SpeechSynthesisControls {
     };
   }, []);
 
-  const preferredVoices = useMemo(() => {
-    return voices.filter((voice) => voice.lang.toLowerCase().startsWith("zh"));
-  }, [voices]);
-
   const cancel = useCallback(() => {
     if (!canUseSpeechSynthesis()) {
       return;
@@ -64,14 +60,14 @@ export function useSpeechSynthesis(): SpeechSynthesisControls {
       const utterance = new SpeechSynthesisUtterance(normalizedText);
       utterance.lang = options.lang ?? "zh-CN";
       utterance.rate = options.rate ?? 0.82;
-      utterance.voice = chooseVoice(preferredVoices, utterance.lang);
+      utterance.voice = chooseVoice(voices, utterance.lang);
       utterance.onstart = () => setIsSpeaking(true);
       utterance.onend = () => setIsSpeaking(false);
       utterance.onerror = () => setIsSpeaking(false);
 
       window.speechSynthesis.speak(utterance);
     },
-    [preferredVoices],
+    [voices],
   );
 
   return {
@@ -95,9 +91,13 @@ function chooseVoice(
   lang: string,
 ): SpeechSynthesisVoice | null {
   const normalizedLang = lang.toLowerCase();
+  const normalizedLanguage = normalizedLang.split("-")[0];
 
   return (
     voices.find((voice) => voice.lang.toLowerCase() === normalizedLang) ??
+    voices.find((voice) =>
+      voice.lang.toLowerCase().startsWith(`${normalizedLanguage}-`),
+    ) ??
     voices.find((voice) => voice.lang.toLowerCase().startsWith("zh-cn")) ??
     voices.find((voice) => voice.lang.toLowerCase().startsWith("zh")) ??
     null
