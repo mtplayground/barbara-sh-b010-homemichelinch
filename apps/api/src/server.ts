@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import { createHealthResponse } from "@app/shared";
 
 import { loadConfig } from "./config/env.js";
+import { errorMiddleware } from "./middleware/errors.js";
+import { createGuideRouter } from "./routes/guide.js";
 
 const config = loadConfig();
 const app = express();
@@ -18,6 +20,8 @@ app.get("/api/health", (_req: Request, res: Response) => {
   res.json(createHealthResponse());
 });
 
+app.use("/api/guide", createGuideRouter());
+
 app.use(express.static(webDistPath, { index: false, maxAge: "1h" }));
 
 app.get(/^(?!\/api\/).*/, (_req: Request, res: Response, next: NextFunction) => {
@@ -28,18 +32,7 @@ app.get(/^(?!\/api\/).*/, (_req: Request, res: Response, next: NextFunction) => 
   });
 });
 
-app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
-  void _next;
-  console.error("Unhandled request error", error);
-
-  if (res.headersSent) {
-    return;
-  }
-
-  res.status(500).json({
-    error: "Internal Server Error",
-  });
-});
+app.use(errorMiddleware);
 
 app.listen(config.server.port, config.server.host, () => {
   console.log(

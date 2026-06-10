@@ -1,6 +1,6 @@
 import type { Pool, PoolClient, QueryResultRow } from "pg";
 
-import { pool } from "../../db/pool.js";
+import { getDatabasePool } from "../../db/pool.js";
 
 export type JsonValue =
   | string
@@ -44,7 +44,11 @@ export function normalizeDishName(dishName: string) {
 }
 
 export class DishGuideCacheRepository {
-  constructor(private readonly db: Queryable = pool) {}
+  private readonly db: Queryable;
+
+  constructor(db?: Queryable) {
+    this.db = db ?? getDatabasePool();
+  }
 
   async findByDishName(dishName: string) {
     return this.findByNormalizedName(normalizeDishName(dishName));
