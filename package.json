@@ -15,6 +15,7 @@
     "format:check": "prettier --check .",
     "start": "npm run start --workspace @app/api",
     "test": "npm run test --workspace @app/api",
+    "test:e2e": "npm run test:e2e --workspace @app/web",
     "typecheck": "tsc --build"
   },
   "devDependencies": {
