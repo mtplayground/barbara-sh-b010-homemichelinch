@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc -b && vite build",
     "dev": "vite --host 0.0.0.0 --port 5173",
-    "preview": "vite preview --host 0.0.0.0 --port 4173"
+    "preview": "vite preview --host 0.0.0.0 --port 4173",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@app/shared": "0.1.0",
@@ -22,6 +23,7 @@
     "vite": "^6.3.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/node": "^25.9.2",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
