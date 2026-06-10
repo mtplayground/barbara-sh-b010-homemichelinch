@@ -8,7 +8,7 @@ import { loadConfig } from "./config/env.js";
 import { errorMiddleware } from "./middleware/errors.js";
 import { createGuideRouter } from "./routes/guide.js";
 
-const config = loadConfig();
+const config = loadServerConfig();
 const app = express();
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const webDistPath = path.resolve(currentDir, "../../web/dist");
@@ -34,8 +34,51 @@ app.get(/^(?!\/api\/).*/, (_req: Request, res: Response, next: NextFunction) => 
 
 app.use(errorMiddleware);
 
-app.listen(config.server.port, config.server.host, () => {
+const server = app.listen(config.server.port, config.server.host, () => {
   console.log(
     `API server listening on http://${config.server.host}:${config.server.port}`,
   );
 });
+
+server.on("error", (error: Error) => {
+  console.error("API server failed to start", {
+    host: config.server.host,
+    port: config.server.port,
+    error: serializeStartupError(error),
+  });
+  process.exit(1);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught exception", { error: serializeStartupError(error) });
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled rejection", { error: serializeStartupError(reason) });
+  process.exit(1);
+});
+
+function loadServerConfig() {
+  try {
+    return loadConfig();
+  } catch (error) {
+    console.error("Invalid API server configuration", {
+      error: serializeStartupError(error),
+    });
+    process.exit(1);
+  }
+}
+
+function serializeStartupError(error: unknown): unknown {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+      cause: "cause" in error ? error.cause : undefined,
+    };
+  }
+
+  return error;
+}
