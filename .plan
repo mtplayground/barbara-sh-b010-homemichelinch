@@ -1,0 +1,53 @@
+# Architecture Plan
+
+## Product Scope
+
+Build a full-stack dish guide app for Chinese dishes. The frontend collects a dish name and renders a polished, Michelin-style guide with title, pronunciation, photo, video, grouped ingredients, recipe, chef guidance, and read-aloud support. The backend normalizes input, checks a PostgreSQL cache, generates structured guide content with Claude, enriches it with YouTube and dish photo media, persists the result, and returns a single guide payload.
+
+## Module Structure
+
+- `apps/web/`: Vite + React + TypeScript frontend.
+  - `src/app/`: app shell, routing-level composition, providers.
+  - `src/components/ui/`: shadcn/ui primitives and local design-system wrappers.
+  - `src/components/guide/`: title/pronunciation, media, ingredients, recipe, Michelin rewrite, skeleton and error states.
+  - `src/features/guide/`: input form, React Query mutation, API client, guide state orchestration.
+  - `src/hooks/`: `useSpeechSynthesis` and small UI hooks.
+  - `src/styles/`: Tailwind theme tokens, base typography, global CSS.
+- `apps/api/`: Express + TypeScript backend.
+  - `src/config/`: typed environment loader and validation.
+  - `src/routes/guide.ts`: `POST /api/guide` request validation and response mapping.
+  - `src/services/generation/`: Claude prompt, Zod schema, structured parsing, closest-match handling.
+  - `src/services/media/`: YouTube search/ranking and dish photo lookup/generation.
+  - `src/services/cache/`: dish name normalization and `dish_guides` repository.
+  - `src/db/`: PostgreSQL client, migrations, schema helpers.
+  - `src/middleware/`: centralized errors, request logging, retries/timeouts where appropriate.
+  - `src/types/`: shared backend domain types, derived from Zod schemas where possible.
+- `packages/shared/`: shared TypeScript contracts for guide request/response payloads, generated from or aligned with Zod schemas.
+- `tests/`: backend unit tests and later end-to-end smoke coverage.
+
+## Shared Types
+
+- `GuideRequest`: raw user dish input.
+- `NormalizedDish`: normalized cache key and display/source names.
+- `GeneratedGuide`: Claude-only structured output: titles, pronunciation, grouped ingredients, recipe metadata, steps, tips, mistakes, plating, Michelin rewrite, and closest-match metadata.
+- `GuideMedia`: optional YouTube video ID/embed URL, dish photo URL, attribution/source, and fallback reason.
+- `GuideResponse`: assembled payload returned by `/api/guide`, including cache metadata and user-facing error or closest-match messaging.
+
+## Issue Dependencies
+
+- Foundation: #1 creates the monorepo shape, scripts, TypeScript, lint/format, static serving.
+- Configuration: #2 adds typed env and `.env.example`; backend services should not read `process.env` directly after this.
+- Design shell: #3 defines Tailwind/shadcn tokens; #4 builds the responsive left-input/right-result layout on top of them.
+- Backend data and generation: #5 creates the cache table; #6 defines Claude generation and the schema; #7 orchestrates normalize -> cache -> generate/media -> persist -> return.
+- Media enrichment: #8 YouTube and #9 dish photo services plug into #7 and should be independently mockable.
+- Frontend data flow: #10 adds React Query and loading/error states against #7; #11-#14 progressively render the guide blocks and speech features.
+- Quality and release prep: #15 backend unit tests, #16 end-to-end smoke test, #17 final error handling, logging, and self-hosted deployment documentation.
+
+## Key Design Decisions
+
+- Use Zod schemas as the contract boundary for external AI output, API responses, and env validation to keep backend behavior testable.
+- Keep cache records keyed by normalized dish name while storing the full guide/media JSON to avoid regenerating expensive content.
+- Treat media services as optional enrichments: return the guide when a video/photo is missing, with explicit fallback metadata for the UI.
+- Keep frontend rendering block-based so issues #11-#14 can land independently without changing the API contract each time.
+- Use React Query only at the API boundary; presentational guide components receive typed props and stay deterministic.
+- Centralize retries, timeouts, and error mapping in backend service wrappers so issue #17 can audit one consistent failure path.
