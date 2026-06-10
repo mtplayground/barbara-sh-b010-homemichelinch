@@ -1,16 +1,42 @@
 import { useState } from "react";
-import { ChefHat, Clock3, Loader2, Search, Sparkles, Utensils } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import type { GuideResponse } from "@app/shared";
+import {
+  AlertCircle,
+  CheckCircle2,
+  ChefHat,
+  Clock3,
+  Loader2,
+  RefreshCcw,
+  Search,
+  Sparkles,
+  Utensils,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { createGuide, GuideApiError } from "@/features/guide/api";
 
-type ResultState = "empty" | "loading";
+type FormError = string | null;
 
 export function AppShell() {
-  const [resultState, setResultState] = useState<ResultState>("empty");
+  const [dish, setDish] = useState("");
+  const [notes, setNotes] = useState("");
+  const [formError, setFormError] = useState<FormError>(null);
+  const guideMutation = useMutation({
+    mutationFn: createGuide,
+  });
+  const isLoading = guideMutation.isPending;
+  const resultState = isLoading
+    ? "loading"
+    : guideMutation.data
+      ? "ready"
+      : guideMutation.error
+        ? "error"
+        : "empty";
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -19,11 +45,49 @@ export function AppShell() {
 
         <div className="grid flex-1 gap-5 py-5 lg:grid-cols-[minmax(320px,0.78fr)_minmax(0,1.22fr)] lg:py-7">
           <InputPanel
-            isLoading={resultState === "loading"}
-            onReset={() => setResultState("empty")}
-            onSubmit={() => setResultState("loading")}
+            dish={dish}
+            formError={formError}
+            isLoading={isLoading}
+            notes={notes}
+            onDishChange={(value) => {
+              setDish(value);
+              setFormError(null);
+            }}
+            onNotesChange={setNotes}
+            onReset={() => {
+              setDish("");
+              setNotes("");
+              setFormError(null);
+              guideMutation.reset();
+            }}
+            onSubmit={() => {
+              const trimmedDish = dish.trim();
+
+              if (!trimmedDish) {
+                setFormError("Enter a dish name before preparing the guide.");
+                return;
+              }
+
+              setFormError(null);
+              guideMutation.mutate({
+                dish: trimmedDish,
+                notes: notes.trim() || undefined,
+              });
+            }}
           />
-          <ResultsPanel state={resultState} />
+          <ResultsPanel
+            error={guideMutation.error}
+            guideResponse={guideMutation.data}
+            onUseSuggestion={(suggestedDishName) => {
+              setDish(suggestedDishName);
+              setFormError(null);
+              guideMutation.mutate({
+                dish: suggestedDishName,
+                notes: notes.trim() || undefined,
+              });
+            }}
+            state={resultState}
+          />
         </div>
       </div>
     </main>
@@ -54,12 +118,26 @@ function AppHeader() {
 }
 
 interface InputPanelProps {
+  dish: string;
+  formError: FormError;
   isLoading: boolean;
+  notes: string;
+  onDishChange: (value: string) => void;
+  onNotesChange: (value: string) => void;
   onReset: () => void;
   onSubmit: () => void;
 }
 
-function InputPanel({ isLoading, onReset, onSubmit }: InputPanelProps) {
+function InputPanel({
+  dish,
+  formError,
+  isLoading,
+  notes,
+  onDishChange,
+  onNotesChange,
+  onReset,
+  onSubmit,
+}: InputPanelProps) {
   return (
     <section className="surface flex flex-col p-5 md:p-6" aria-labelledby="input-heading">
       <div className="mb-6">
@@ -86,7 +164,22 @@ function InputPanel({ isLoading, onReset, onSubmit }: InputPanelProps) {
           <label className="text-sm font-semibold" htmlFor="dish-name">
             Dish name
           </label>
-          <Input autoComplete="off" id="dish-name" name="dish" placeholder="鱼香肉丝" />
+          <Input
+            aria-invalid={Boolean(formError)}
+            autoComplete="off"
+            disabled={isLoading}
+            id="dish-name"
+            name="dish"
+            onChange={(event) => onDishChange(event.target.value)}
+            placeholder="鱼香肉丝"
+            value={dish}
+          />
+          {formError ? (
+            <p className="flex items-center gap-2 text-sm text-destructive">
+              <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
+              {formError}
+            </p>
+          ) : null}
         </div>
 
         <div className="space-y-2">
@@ -94,9 +187,12 @@ function InputPanel({ isLoading, onReset, onSubmit }: InputPanelProps) {
             Notes
           </label>
           <Textarea
+            disabled={isLoading}
             id="dish-notes"
             name="notes"
+            onChange={(event) => onNotesChange(event.target.value)}
             placeholder="Weeknight dinner, moderate heat, serves four"
+            value={notes}
           />
         </div>
 
@@ -107,14 +203,16 @@ function InputPanel({ isLoading, onReset, onSubmit }: InputPanelProps) {
             ) : (
               <Search className="size-4" aria-hidden="true" />
             )}
-            Prepare guide
+            {isLoading ? "Preparing" : "Prepare guide"}
           </Button>
           <Button
             className="w-full sm:w-auto"
+            disabled={isLoading && !dish && !notes}
             onClick={onReset}
             type="button"
             variant="outline"
           >
+            <RefreshCcw className="size-4" aria-hidden="true" />
             Reset
           </Button>
         </div>
@@ -123,11 +221,21 @@ function InputPanel({ isLoading, onReset, onSubmit }: InputPanelProps) {
   );
 }
 
+type ResultState = "empty" | "loading" | "ready" | "error";
+
 interface ResultsPanelProps {
+  error: Error | null;
+  guideResponse?: GuideResponse;
+  onUseSuggestion: (suggestedDishName: string) => void;
   state: ResultState;
 }
 
-function ResultsPanel({ state }: ResultsPanelProps) {
+function ResultsPanel({
+  error,
+  guideResponse,
+  onUseSuggestion,
+  state,
+}: ResultsPanelProps) {
   return (
     <section
       className="surface flex min-h-[520px] flex-col p-5 md:p-6"
@@ -147,9 +255,20 @@ function ResultsPanel({ state }: ResultsPanelProps) {
             Building
           </Badge>
         ) : null}
+        {state === "ready" ? (
+          <Badge variant={guideResponse?.cache.hit ? "outline" : "gold"}>
+            <CheckCircle2 className="mr-1 size-3.5" aria-hidden="true" />
+            {guideResponse?.cache.hit ? "Cached" : "Fresh"}
+          </Badge>
+        ) : null}
       </div>
 
-      {state === "loading" ? <LoadingState /> : <EmptyState />}
+      {state === "loading" ? <LoadingState /> : null}
+      {state === "error" ? <ErrorState error={error} /> : null}
+      {state === "ready" && guideResponse ? (
+        <GuidePreview response={guideResponse} onUseSuggestion={onUseSuggestion} />
+      ) : null}
+      {state === "empty" ? <EmptyState /> : null}
     </section>
   );
 }
@@ -165,6 +284,128 @@ function EmptyState() {
         The finished guide will appear here with pronunciation, media, ingredients, recipe
         steps, and chef guidance.
       </p>
+    </div>
+  );
+}
+
+function ErrorState({ error }: { error: Error | null }) {
+  const message =
+    error instanceof GuideApiError
+      ? error.message
+      : "The guide service could not complete the request.";
+
+  return (
+    <div className="flex flex-1 flex-col justify-center rounded-lg border border-destructive/30 bg-background/45 px-6 py-12">
+      <div className="mb-5 flex size-14 items-center justify-center rounded-md bg-destructive text-destructive-foreground">
+        <AlertCircle className="size-7" aria-hidden="true" />
+      </div>
+      <h3 className="text-2xl">Guide unavailable</h3>
+      <p className="mt-3 max-w-xl text-sm text-muted-foreground">{message}</p>
+    </div>
+  );
+}
+
+function GuidePreview({
+  response,
+  onUseSuggestion,
+}: {
+  response: GuideResponse;
+  onUseSuggestion: (suggestedDishName: string) => void;
+}) {
+  const { guide } = response;
+  const closestMatch = guide.closestMatch;
+
+  return (
+    <div className="flex flex-1 flex-col gap-5">
+      {closestMatch ? (
+        <div className="rounded-lg border border-gold/30 bg-gold-soft/60 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-foreground">
+                Closest match: {closestMatch.suggestedDishName}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">{closestMatch.reason}</p>
+            </div>
+            <Button
+              className="w-full sm:w-auto"
+              onClick={() => onUseSuggestion(closestMatch.suggestedDishName)}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              <Search className="size-4" aria-hidden="true" />
+              Use match
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="grid gap-5 lg:grid-cols-[0.85fr_1.15fr]">
+        <div className="rounded-lg border border-border bg-background/45 p-4">
+          <p className="overline">Dish</p>
+          <h3 className="mt-2 text-3xl">{guide.title}</h3>
+          <p className="mt-2 text-sm font-semibold text-primary">{guide.originalName}</p>
+          <p className="mt-3 text-sm text-muted-foreground">
+            {guide.pronunciation.pinyin}
+            {guide.pronunciation.ipa ? ` · ${guide.pronunciation.ipa}` : ""}
+          </p>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          <GuideMetric label="Difficulty" value={guide.recipe.difficulty} />
+          <GuideMetric label="Total" value={`${guide.recipe.totalTimeMinutes} min`} />
+          <GuideMetric label="Serves" value={String(guide.recipe.servings)} />
+        </div>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        <section className="rounded-lg border border-border bg-background/45 p-4">
+          <h3 className="text-xl">Ingredients</h3>
+          <div className="mt-4 space-y-3">
+            {guide.ingredients.slice(0, 3).map((group) => (
+              <div key={group.group}>
+                <p className="text-sm font-semibold">{group.group}</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {group.items
+                    .slice(0, 3)
+                    .map((item) => item.name)
+                    .join(", ")}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-lg border border-border bg-background/45 p-4">
+          <h3 className="text-xl">First steps</h3>
+          <ol className="mt-4 space-y-3">
+            {guide.recipe.steps.slice(0, 3).map((step) => (
+              <li className="text-sm text-muted-foreground" key={step.order}>
+                <span className="font-semibold text-foreground">
+                  {step.order}. {step.title}
+                </span>
+                <span className="block">{step.instruction}</span>
+              </li>
+            ))}
+          </ol>
+        </section>
+      </div>
+
+      <section className="rounded-lg border border-border bg-background/45 p-4">
+        <h3 className="text-xl">{guide.michelinRewrite.title}</h3>
+        <p className="mt-3 text-sm text-muted-foreground">
+          {guide.michelinRewrite.description}
+        </p>
+      </section>
+    </div>
+  );
+}
+
+function GuideMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/45 p-4">
+      <p className="text-xs font-semibold uppercase text-muted-foreground">{label}</p>
+      <p className="mt-2 text-lg font-semibold text-foreground">{value}</p>
     </div>
   );
 }
