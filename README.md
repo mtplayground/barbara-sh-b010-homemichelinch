@@ -15,6 +15,7 @@ Full-stack TypeScript workspace with a Vite + React frontend, Express backend, a
 - `npm run start`: run the built Express server on `0.0.0.0:8080` by default.
 - `npm run lint`: run ESLint.
 - `npm run format`: format the workspace with Prettier.
+- `npm run db:migrate --workspace @app/api`: apply PostgreSQL migrations.
 
 ## Environment
 
@@ -28,3 +29,13 @@ Required runtime groups:
 - Object storage: `OBJECT_STORAGE_ACCESS_KEY_ID`, `OBJECT_STORAGE_SECRET_ACCESS_KEY`, `OBJECT_STORAGE_BUCKET`, `OBJECT_STORAGE_PREFIX`, `OBJECT_STORAGE_ENDPOINT`, `OBJECT_STORAGE_REGION`, `OBJECT_STORAGE_FORCE_PATH_STYLE`
 
 Object storage uses the vendor-neutral Tigris/S3-compatible names above. `OBJECT_STORAGE_PREFIX` must be prepended to every object key by storage code added in later issues.
+
+## Database
+
+The API uses PostgreSQL for persistent state. Set `DATABASE_URL`, then run:
+
+```bash
+npm run db:migrate --workspace @app/api
+```
+
+The initial migration creates `dish_guides`, a cache table keyed by normalized dish name with English display name, generated guide JSON, media reference JSON, and timestamps.
