@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 import { z } from "zod";
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const portSchema = z.coerce.number().int().min(1).max(65535);
 
@@ -46,6 +46,7 @@ const envSchema = z.object({
   PORT: portSchema.default(8080),
   DATABASE_URL: postgresUrlSchema,
   CLAUDE_API_KEY: z.string().min(1),
+  CLAUDE_MODEL: z.string().min(1).default("claude-sonnet-4-6"),
   YOUTUBE_API_KEY: z.string().min(1),
   IMAGE_API_KEY: z.string().min(1),
   OBJECT_STORAGE_ACCESS_KEY_ID: z.string().min(1),
@@ -72,6 +73,7 @@ export interface AppConfig {
   };
   ai: {
     claudeApiKey: string;
+    claudeModel: string;
   };
   media: {
     youtubeApiKey: string;
@@ -109,6 +111,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     },
     ai: {
       claudeApiKey: parsed.data.CLAUDE_API_KEY,
+      claudeModel: parsed.data.CLAUDE_MODEL,
     },
     media: {
       youtubeApiKey: parsed.data.YOUTUBE_API_KEY,
@@ -125,5 +128,3 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     },
   };
 }
-
-export const config = loadConfig();

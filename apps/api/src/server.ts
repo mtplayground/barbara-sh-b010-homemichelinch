@@ -4,8 +4,9 @@ import { fileURLToPath } from "node:url";
 
 import { createHealthResponse } from "@app/shared";
 
-import { config } from "./config/env.js";
+import { loadConfig } from "./config/env.js";
 
+const config = loadConfig();
 const app = express();
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const webDistPath = path.resolve(currentDir, "../../web/dist");

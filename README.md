@@ -25,7 +25,7 @@ Required runtime groups:
 
 - Server: `HOST`, `PORT`
 - PostgreSQL: `DATABASE_URL`
-- APIs: `CLAUDE_API_KEY`, `YOUTUBE_API_KEY`, `IMAGE_API_KEY`
+- APIs: `CLAUDE_API_KEY`, `CLAUDE_MODEL`, `YOUTUBE_API_KEY`, `IMAGE_API_KEY`
 - Object storage: `OBJECT_STORAGE_ACCESS_KEY_ID`, `OBJECT_STORAGE_SECRET_ACCESS_KEY`, `OBJECT_STORAGE_BUCKET`, `OBJECT_STORAGE_PREFIX`, `OBJECT_STORAGE_ENDPOINT`, `OBJECT_STORAGE_REGION`, `OBJECT_STORAGE_FORCE_PATH_STYLE`
 
 Object storage uses the vendor-neutral Tigris/S3-compatible names above. `OBJECT_STORAGE_PREFIX` must be prepended to every object key by storage code added in later issues.
