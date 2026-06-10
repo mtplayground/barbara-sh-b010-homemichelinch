@@ -11,6 +11,8 @@ import {
   Search,
   Sparkles,
   Utensils,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { createGuide, GuideApiError } from "@/features/guide/api";
+import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
 
 type FormError = string | null;
 
@@ -341,15 +344,7 @@ function GuidePreview({
       ) : null}
 
       <div className="grid gap-5 lg:grid-cols-[0.85fr_1.15fr]">
-        <div className="rounded-lg border border-border bg-background/45 p-4">
-          <p className="overline">Dish</p>
-          <h3 className="mt-2 text-3xl">{guide.title}</h3>
-          <p className="mt-2 text-sm font-semibold text-primary">{guide.originalName}</p>
-          <p className="mt-3 text-sm text-muted-foreground">
-            {guide.pronunciation.pinyin}
-            {guide.pronunciation.ipa ? ` · ${guide.pronunciation.ipa}` : ""}
-          </p>
-        </div>
+        <DishTitlePronunciation guide={guide} />
 
         <div className="grid gap-3 sm:grid-cols-3">
           <GuideMetric label="Difficulty" value={guide.recipe.difficulty} />
@@ -398,6 +393,63 @@ function GuidePreview({
         </p>
       </section>
     </div>
+  );
+}
+
+function DishTitlePronunciation({ guide }: { guide: GuideResponse["guide"] }) {
+  const speech = useSpeechSynthesis();
+  const pronunciationText = [
+    guide.pronunciation.pinyin,
+    guide.pronunciation.ipa ? guide.pronunciation.ipa : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <section className="rounded-lg border border-border bg-background/45 p-4">
+      <p className="overline">Dish</p>
+      <div className="mt-2 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h3 className="text-3xl">{guide.title}</h3>
+          <p className="mt-2 text-sm font-semibold text-primary">{guide.originalName}</p>
+        </div>
+        {speech.isSupported ? (
+          <Button
+            className="w-full sm:w-auto"
+            onClick={() => {
+              if (speech.isSpeaking) {
+                speech.cancel();
+                return;
+              }
+
+              speech.speak(guide.pronunciation.audioText, { lang: "zh-CN" });
+            }}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {speech.isSpeaking ? (
+              <VolumeX className="size-4" aria-hidden="true" />
+            ) : (
+              <Volume2 className="size-4" aria-hidden="true" />
+            )}
+            {speech.isSpeaking ? "Stop" : "Play pronunciation"}
+          </Button>
+        ) : null}
+      </div>
+
+      <div className="mt-5 rounded-md border border-border/70 bg-background/70 p-3">
+        <p className="text-xs font-semibold uppercase text-muted-foreground">
+          Pronunciation
+        </p>
+        <p className="mt-2 text-base font-semibold text-foreground">
+          {pronunciationText}
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {guide.pronunciation.audioText}
+        </p>
+      </div>
+    </section>
   );
 }
 
