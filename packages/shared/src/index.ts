@@ -1,14 +1,28 @@
 export interface HealthResponse {
-  ok: true;
+  ok: boolean;
   service: "api";
   timestamp: string;
+  dependencies: {
+    database: HealthDependencyStatus;
+    schema: HealthDependencyStatus;
+    claude: HealthDependencyStatus;
+  };
 }
 
-export function createHealthResponse(now: Date = new Date()): HealthResponse {
+export interface HealthDependencyStatus {
+  ok: boolean;
+  message?: string;
+}
+
+export function createHealthResponse(
+  dependencies: HealthResponse["dependencies"],
+  now: Date = new Date(),
+): HealthResponse {
   return {
-    ok: true,
+    ok: dependencies.database.ok && dependencies.schema.ok && dependencies.claude.ok,
     service: "api",
     timestamp: now.toISOString(),
+    dependencies,
   };
 }
 

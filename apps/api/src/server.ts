@@ -2,10 +2,9 @@ import express, { type NextFunction, type Request, type Response } from "express
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createHealthResponse } from "@app/shared";
-
 import { loadConfig } from "./config/env.js";
 import { errorMiddleware } from "./middleware/errors.js";
+import { createHealthRouter } from "./routes/health.js";
 import { createGuideRouter } from "./routes/guide.js";
 
 const config = loadServerConfig();
@@ -16,9 +15,7 @@ const webDistPath = path.resolve(currentDir, "../../web/dist");
 app.disable("x-powered-by");
 app.use(express.json({ limit: "1mb" }));
 
-app.get("/api/health", (_req: Request, res: Response) => {
-  res.json(createHealthResponse());
-});
+app.use("/api/health", createHealthRouter());
 
 app.use("/api/guide", createGuideRouter());
 
