@@ -3,13 +3,23 @@ import pg from "pg";
 import { loadConfig } from "../config/env.js";
 import { createPostgresConnectionConfig } from "./connection.js";
 
-const config = loadConfig();
+let pool: pg.Pool | null = null;
 
-export const pool = new pg.Pool({
-  ...createPostgresConnectionConfig(config.database.url),
-  max: 10,
-});
+export function getDatabasePool() {
+  if (!pool) {
+    const config = loadConfig();
+    pool = new pg.Pool({
+      ...createPostgresConnectionConfig(config.database.url),
+      max: 10,
+    });
+  }
+
+  return pool;
+}
 
 export async function closeDatabasePool() {
-  await pool.end();
+  if (pool) {
+    await pool.end();
+    pool = null;
+  }
 }
