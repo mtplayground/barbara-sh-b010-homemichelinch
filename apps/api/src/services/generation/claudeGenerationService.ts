@@ -51,18 +51,23 @@ export class ClaudeGenerationService {
   }
 
   async generateDishGuide(input: DishGuidePromptInput): Promise<GeneratedDishGuide> {
-    const response = await this.client.messages.create({
-      model: this.model,
-      max_tokens: 4096,
-      temperature: 0.2,
-      system: DISH_GUIDE_SYSTEM_PROMPT,
-      messages: [
-        {
-          role: "user",
-          content: buildDishGuidePrompt(input),
-        },
-      ],
-    });
+    let response: Message;
+    try {
+      response = await this.client.messages.create({
+        model: this.model,
+        max_tokens: 4096,
+        temperature: 0.2,
+        system: DISH_GUIDE_SYSTEM_PROMPT,
+        messages: [
+          {
+            role: "user",
+            content: buildDishGuidePrompt(input),
+          },
+        ],
+      });
+    } catch (error) {
+      throw new ClaudeGenerationError(getClaudeRequestFailureMessage(error), error);
+    }
 
     const text = extractTextContent(response);
     return parseGeneratedDishGuide(text);
@@ -107,4 +112,48 @@ function extractJsonObject(rawText: string) {
   }
 
   return trimmed.slice(firstBrace, lastBrace + 1);
+}
+
+function getClaudeRequestFailureMessage(error: unknown): string {
+  const status = readHttpStatus(error);
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+
+  if (
+    status === 401 ||
+    status === 403 ||
+    message.includes("authentication") ||
+    message.includes("api key") ||
+    message.includes("unauthorized") ||
+    message.includes("permission")
+  ) {
+    return "Claude API authentication failed";
+  }
+
+  return "Claude generation request failed";
+}
+
+function readHttpStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== "object") {
+    return undefined;
+  }
+
+  const candidate = error as {
+    status?: unknown;
+    statusCode?: unknown;
+    $metadata?: { httpStatusCode?: unknown };
+  };
+
+  if (typeof candidate.status === "number") {
+    return candidate.status;
+  }
+
+  if (typeof candidate.statusCode === "number") {
+    return candidate.statusCode;
+  }
+
+  if (typeof candidate.$metadata?.httpStatusCode === "number") {
+    return candidate.$metadata.httpStatusCode;
+  }
+
+  return undefined;
 }
