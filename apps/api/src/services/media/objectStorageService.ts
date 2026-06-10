@@ -7,7 +7,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
-import { loadConfig, type AppConfig } from "../../config/env.js";
+import { loadObjectStorageConfig, type ObjectStorageConfig } from "../../config/env.js";
 
 const DEFAULT_SIGNED_URL_TTL_SECONDS = 60 * 60;
 
@@ -26,18 +26,18 @@ export interface StoredObject {
 }
 
 interface ObjectStorageServiceOptions {
-  config?: AppConfig["objectStorage"];
+  config?: ObjectStorageConfig;
   client?: S3Client;
   signedUrlTtlSeconds?: number;
 }
 
 export class ObjectStorageService {
-  private readonly config: AppConfig["objectStorage"];
+  private readonly config: ObjectStorageConfig;
   private readonly client: S3Client;
   private readonly signedUrlTtlSeconds: number;
 
   constructor(options: ObjectStorageServiceOptions = {}) {
-    this.config = options.config ?? loadConfig().objectStorage;
+    this.config = options.config ?? loadObjectStorageConfig();
     this.client = options.client ?? new S3Client(toS3ClientConfig(this.config));
     this.signedUrlTtlSeconds =
       options.signedUrlTtlSeconds ?? DEFAULT_SIGNED_URL_TTL_SECONDS;
@@ -116,7 +116,7 @@ export class ObjectStorageService {
   }
 }
 
-function toS3ClientConfig(config: AppConfig["objectStorage"]): S3ClientConfig {
+function toS3ClientConfig(config: ObjectStorageConfig): S3ClientConfig {
   return {
     region: config.region,
     endpoint: config.endpoint,

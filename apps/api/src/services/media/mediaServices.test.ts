@@ -60,6 +60,73 @@ test("YouTubeSearchService ranks embeddable English cooking videos", async () =>
   assert.equal(requests.length, 2);
 });
 
+test("YouTubeSearchService skips enrichment when API key is absent", async () => {
+  const service = new YouTubeSearchService({
+    fetcher: async () => {
+      throw new Error("fetch should not run without a YouTube API key");
+    },
+  });
+
+  const result = await service.findBestCookingVideo("mapo tofu");
+
+  assert.equal(result, null);
+});
+
+test("DishPhotoService skips enrichment when object storage is absent", async () => {
+  const originalStorageEnv = snapshotStorageEnv();
+  clearStorageEnv();
+
+  try {
+    const service = new DishPhotoService({
+      imageSearchClient: {
+        async search() {
+          throw new Error("image search should not run without object storage");
+        },
+      },
+      aiImageGenerator: {
+        async generate() {
+          throw new Error("AI image generation should not run without object storage");
+        },
+      },
+    });
+
+    const result = await service.getDishPhoto("mapo tofu");
+
+    assert.equal(result, null);
+  } finally {
+    restoreStorageEnv(originalStorageEnv);
+  }
+});
+
+test("DishPhotoService skips image search when image API key is absent", async () => {
+  let generatedDishName = "";
+  const service = new DishPhotoService({
+    storage: {
+      async getIfExists() {
+        return null;
+      },
+      async putObject(input: StoredObjectInput) {
+        return {
+          objectKey: `app-prefix/${input.relativeKey}`,
+          relativeKey: input.relativeKey,
+          url: "https://signed.example/ai",
+        };
+      },
+    },
+    aiImageGenerator: {
+      async generate(dishName: string) {
+        generatedDishName = dishName;
+        return { body: Buffer.from("png-bytes"), contentType: "image/png" };
+      },
+    },
+  });
+
+  const result = await service.getDishPhoto("mapo tofu");
+
+  assert.equal(result?.source, "ai-generated");
+  assert.equal(generatedDishName, "mapo tofu");
+});
+
 test("DishPhotoService returns cached object before calling externals", async () => {
   let searchCalls = 0;
   let generationCalls = 0;
@@ -94,6 +161,7 @@ test("DishPhotoService returns cached object before calling externals", async ()
 
   const result = await service.getDishPhoto("mapo tofu");
 
+  assert.ok(result);
   assert.equal(result.source, "cache");
   assert.equal(result.contentType, "image/webp");
   assert.equal(result.url, "https://signed.example/cache");
@@ -148,6 +216,7 @@ test("DishPhotoService stores image-search match with downloaded bytes", async (
 
   const result = await service.getDishPhoto("mapo tofu");
 
+  assert.ok(result);
   assert.equal(result.source, "image-search");
   assert.equal(result.altText, "mapo tofu plated dish");
   assert.equal(result.attribution?.label, "Photo by Test");
@@ -187,6 +256,7 @@ test("DishPhotoService falls back to AI image when search has no match", async (
   const result = await service.getDishPhoto("mapo tofu");
 
   assert.equal(generatedDishName, "mapo tofu");
+  assert.ok(result);
   assert.equal(result.source, "ai-generated");
   assert.equal(result.contentType, "image/png");
   assert.equal(result.altText, "AI-generated photo of mapo tofu");
@@ -255,4 +325,36 @@ function videoDetails(input: {
       duration: input.duration,
     },
   };
+}
+
+function snapshotStorageEnv() {
+  return {
+    OBJECT_STORAGE_ACCESS_KEY_ID: process.env.OBJECT_STORAGE_ACCESS_KEY_ID,
+    OBJECT_STORAGE_SECRET_ACCESS_KEY: process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY,
+    OBJECT_STORAGE_BUCKET: process.env.OBJECT_STORAGE_BUCKET,
+    OBJECT_STORAGE_PREFIX: process.env.OBJECT_STORAGE_PREFIX,
+    OBJECT_STORAGE_ENDPOINT: process.env.OBJECT_STORAGE_ENDPOINT,
+    OBJECT_STORAGE_REGION: process.env.OBJECT_STORAGE_REGION,
+    OBJECT_STORAGE_FORCE_PATH_STYLE: process.env.OBJECT_STORAGE_FORCE_PATH_STYLE,
+  };
+}
+
+function clearStorageEnv() {
+  delete process.env.OBJECT_STORAGE_ACCESS_KEY_ID;
+  delete process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY;
+  delete process.env.OBJECT_STORAGE_BUCKET;
+  delete process.env.OBJECT_STORAGE_PREFIX;
+  delete process.env.OBJECT_STORAGE_ENDPOINT;
+  delete process.env.OBJECT_STORAGE_REGION;
+  delete process.env.OBJECT_STORAGE_FORCE_PATH_STYLE;
+}
+
+function restoreStorageEnv(snapshot: ReturnType<typeof snapshotStorageEnv>) {
+  for (const [key, value] of Object.entries(snapshot)) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
 }

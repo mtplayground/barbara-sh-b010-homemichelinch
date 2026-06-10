@@ -1,6 +1,6 @@
 import { z, ZodError } from "zod";
 
-import { loadConfig } from "../../config/env.js";
+import { loadOptionalIntegrationConfig } from "../../config/env.js";
 import { retry } from "../retry.js";
 
 const YOUTUBE_API_BASE_URL = "https://www.googleapis.com/youtube/v3";
@@ -135,11 +135,11 @@ export class YouTubeSearchError extends Error {
 }
 
 export class YouTubeSearchService {
-  private readonly apiKey: string;
+  private readonly apiKey?: string;
   private readonly fetcher: typeof fetch;
 
   constructor(options: YouTubeSearchServiceOptions = {}) {
-    this.apiKey = options.apiKey ?? loadConfig().media.youtubeApiKey;
+    this.apiKey = options.apiKey ?? loadOptionalIntegrationConfig().youtubeApiKey;
     this.fetcher = options.fetcher ?? fetch;
   }
 
@@ -147,6 +147,11 @@ export class YouTubeSearchService {
     dishName: string,
     options: YouTubeSearchOptions = {},
   ): Promise<YouTubeVideoResult | null> {
+    if (!this.apiKey) {
+      return null;
+    }
+    const apiKey = this.apiKey;
+
     const normalizedDishName = dishName.trim();
 
     if (!normalizedDishName) {
@@ -155,7 +160,7 @@ export class YouTubeSearchService {
 
     const maxResults = clampMaxResults(options.maxResults ?? DEFAULT_MAX_RESULTS);
     const videoIds = await retry(
-      () => this.searchVideoIds(normalizedDishName, maxResults),
+      () => this.searchVideoIds(normalizedDishName, maxResults, apiKey),
       {
         attempts: 2,
         delayMs: 250,
@@ -167,7 +172,7 @@ export class YouTubeSearchService {
       return null;
     }
 
-    const videos = await retry(() => this.fetchVideoDetails(videoIds), {
+    const videos = await retry(() => this.fetchVideoDetails(videoIds, apiKey), {
       attempts: 2,
       delayMs: 250,
       shouldRetry: isRetryableYouTubeError,
@@ -176,7 +181,11 @@ export class YouTubeSearchService {
     return rankVideos(normalizedDishName, videos)[0] ?? null;
   }
 
-  private async searchVideoIds(dishName: string, maxResults: number): Promise<string[]> {
+  private async searchVideoIds(
+    dishName: string,
+    maxResults: number,
+    apiKey: string,
+  ): Promise<string[]> {
     const response = await this.getJson(
       "/search",
       new URLSearchParams({
@@ -191,7 +200,7 @@ export class YouTubeSearchService {
         videoEmbeddable: "true",
         videoSyndicated: "true",
         videoDuration: "medium",
-        key: this.apiKey,
+        key: apiKey,
       }),
     );
 
@@ -202,13 +211,16 @@ export class YouTubeSearchService {
       .filter((videoId): videoId is string => Boolean(videoId));
   }
 
-  private async fetchVideoDetails(videoIds: string[]): Promise<VideoItem[]> {
+  private async fetchVideoDetails(
+    videoIds: string[],
+    apiKey: string,
+  ): Promise<VideoItem[]> {
     const response = await this.getJson(
       "/videos",
       new URLSearchParams({
         part: "snippet,statistics,status,contentDetails",
         id: videoIds.join(","),
-        key: this.apiKey,
+        key: apiKey,
       }),
     );
 
