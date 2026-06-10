@@ -9,7 +9,7 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
-    "test": "tsx --test src/config/env.test.ts src/services/generation/claudeGenerationService.test.ts src/services/guide/guideOrchestrator.test.ts src/services/media/mediaServices.test.ts"
+    "test": "tsx --test src/config/env.test.ts src/services/generation/claudeGenerationService.test.ts src/services/guide/guideOrchestrator.test.ts src/services/health/readiness.test.ts src/services/media/mediaServices.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
