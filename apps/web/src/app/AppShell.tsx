@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useMutation } from "@tanstack/react-query";
 import type { GuideResponse } from "@app/shared";
 import {
@@ -6,11 +6,14 @@ import {
   CheckCircle2,
   ChefHat,
   Clock3,
+  ImageIcon,
   Loader2,
+  PlayCircle,
   RefreshCcw,
   Search,
   Sparkles,
   Utensils,
+  Video,
   Volume2,
   VolumeX,
 } from "lucide-react";
@@ -353,6 +356,8 @@ function GuidePreview({
         </div>
       </div>
 
+      <MediaBlocks media={response.media} title={guide.title} />
+
       <div className="grid gap-5 lg:grid-cols-2">
         <section className="rounded-lg border border-border bg-background/45 p-4">
           <h3 className="text-xl">Ingredients</h3>
@@ -394,6 +399,150 @@ function GuidePreview({
       </section>
     </div>
   );
+}
+
+function MediaBlocks({ media, title }: { media: GuideResponse["media"]; title: string }) {
+  return (
+    <div className="grid gap-5 lg:grid-cols-[0.95fr_1.05fr]">
+      <DishPhotoBlock media={media} title={title} />
+      <VideoEmbedBlock media={media} title={title} />
+    </div>
+  );
+}
+
+function DishPhotoBlock({
+  media,
+  title,
+}: {
+  media: GuideResponse["media"];
+  title: string;
+}) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const photoUrl = media.photo?.url;
+  const canShowPhoto = Boolean(photoUrl) && !imageFailed;
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-border bg-background/45">
+      <div className="flex items-center justify-between gap-3 border-b border-border/70 p-4">
+        <div>
+          <p className="overline">Photo</p>
+          <h3 className="mt-1 text-xl">Dish portrait</h3>
+        </div>
+        <Badge variant={canShowPhoto ? "gold" : "outline"}>
+          <ImageIcon className="mr-1 size-3.5" aria-hidden="true" />
+          {canShowPhoto ? "Ready" : "Pending"}
+        </Badge>
+      </div>
+
+      <div className="aspect-[4/3] bg-muted">
+        {canShowPhoto ? (
+          <img
+            alt={`${title} plated dish`}
+            className="h-full w-full object-cover"
+            loading="lazy"
+            onError={() => setImageFailed(true)}
+            src={photoUrl}
+          />
+        ) : (
+          <MediaFallback
+            icon={<ImageIcon className="size-8" aria-hidden="true" />}
+            title="Photo pending"
+            copy="A signed dish photo will appear here when media enrichment is ready."
+          />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function VideoEmbedBlock({
+  media,
+  title,
+}: {
+  media: GuideResponse["media"];
+  title: string;
+}) {
+  const embedUrl = getYouTubeEmbedUrl(media.youtube);
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-border bg-background/45">
+      <div className="flex items-center justify-between gap-3 border-b border-border/70 p-4">
+        <div>
+          <p className="overline">Video</p>
+          <h3 className="mt-1 text-xl">Cooking reference</h3>
+        </div>
+        <Badge variant={embedUrl ? "gold" : "outline"}>
+          <Video className="mr-1 size-3.5" aria-hidden="true" />
+          {embedUrl ? "Embed" : "Pending"}
+        </Badge>
+      </div>
+
+      <div className="aspect-video bg-muted">
+        {embedUrl ? (
+          <iframe
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowFullScreen
+            className="h-full w-full"
+            loading="lazy"
+            referrerPolicy="strict-origin-when-cross-origin"
+            src={embedUrl}
+            title={`${title} cooking video`}
+          />
+        ) : (
+          <MediaFallback
+            icon={<PlayCircle className="size-8" aria-hidden="true" />}
+            title="Video pending"
+            copy="An embeddable cooking video will appear here when media enrichment is ready."
+          />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function MediaFallback({
+  copy,
+  icon,
+  title,
+}: {
+  copy: string;
+  icon: ReactNode;
+  title: string;
+}) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center px-6 py-10 text-center">
+      <div className="mb-4 flex size-14 items-center justify-center rounded-md bg-secondary text-primary">
+        {icon}
+      </div>
+      <p className="text-base font-semibold text-foreground">{title}</p>
+      <p className="mt-2 max-w-sm text-sm text-muted-foreground">{copy}</p>
+    </div>
+  );
+}
+
+function getYouTubeEmbedUrl(youtube: GuideResponse["media"]["youtube"]): string | null {
+  if (youtube?.embedUrl && isAllowedYouTubeEmbedUrl(youtube.embedUrl)) {
+    return youtube.embedUrl;
+  }
+
+  if (youtube?.videoId && /^[A-Za-z0-9_-]{6,20}$/.test(youtube.videoId)) {
+    return `https://www.youtube-nocookie.com/embed/${youtube.videoId}`;
+  }
+
+  return null;
+}
+
+function isAllowedYouTubeEmbedUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      (url.hostname === "www.youtube.com" ||
+        url.hostname === "www.youtube-nocookie.com") &&
+      url.pathname.startsWith("/embed/")
+    );
+  } catch {
+    return false;
+  }
 }
 
 function DishTitlePronunciation({ guide }: { guide: GuideResponse["guide"] }) {
