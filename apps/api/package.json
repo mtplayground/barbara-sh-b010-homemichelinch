@@ -11,7 +11,9 @@
   },
   "dependencies": {
     "@app/shared": "0.1.0",
-    "express": "^5.1.0"
+    "dotenv": "^17.4.2",
+    "express": "^5.1.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",

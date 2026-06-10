@@ -4,9 +4,9 @@ import { fileURLToPath } from "node:url";
 
 import { createHealthResponse } from "@app/shared";
 
+import { config } from "./config/env.js";
+
 const app = express();
-const host = process.env.HOST ?? "0.0.0.0";
-const port = Number.parseInt(process.env.PORT ?? "8080", 10);
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const webDistPath = path.resolve(currentDir, "../../web/dist");
 
@@ -40,10 +40,8 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   });
 });
 
-if (!Number.isInteger(port) || port <= 0 || port > 65535) {
-  throw new Error(`Invalid PORT value: ${process.env.PORT}`);
-}
-
-app.listen(port, host, () => {
-  console.log(`API server listening on http://${host}:${port}`);
+app.listen(config.server.port, config.server.host, () => {
+  console.log(
+    `API server listening on http://${config.server.host}:${config.server.port}`,
+  );
 });
