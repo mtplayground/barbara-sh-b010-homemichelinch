@@ -24,21 +24,40 @@ const postgresUrlSchema = z
     { message: "DATABASE_URL must be a valid PostgreSQL connection URL" },
   );
 
-const currentDir = path.dirname(fileURLToPath(import.meta.url));
-const migrationsDir = path.resolve(currentDir, "../../migrations");
+const currentFile = fileURLToPath(import.meta.url);
+const currentDir = path.dirname(currentFile);
+const defaultMigrationsDir = path.resolve(currentDir, "../../migrations");
 
-async function readMigrations() {
-  const entries = await fs.readdir(migrationsDir, { withFileTypes: true });
-
-  return entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".sql"))
-    .map((entry) => entry.name)
-    .sort();
+interface MigrationQueryResult {
+  rows: Array<{ version?: string }>;
 }
 
-async function runMigrations() {
-  const databaseUrl = postgresUrlSchema.parse(process.env.DATABASE_URL);
-  const client = new Client(createPostgresConnectionConfig(databaseUrl));
+export interface MigrationClient {
+  connect(): Promise<void>;
+  query(sql: string, values?: readonly unknown[]): Promise<MigrationQueryResult>;
+  end(): Promise<void>;
+}
+
+interface MigrationLogger {
+  log(message: string): void;
+}
+
+export interface RunMigrationsOptions {
+  databaseUrl?: string;
+  client?: MigrationClient;
+  migrationsDir?: string;
+  logger?: MigrationLogger;
+}
+
+export async function runMigrations(options: RunMigrationsOptions = {}) {
+  const databaseUrl = postgresUrlSchema.parse(
+    options.databaseUrl ?? process.env.DATABASE_URL,
+  );
+  const migrationsDir = options.migrationsDir ?? defaultMigrationsDir;
+  const logger = options.logger ?? console;
+  const client =
+    options.client ?? new Client(createPostgresConnectionConfig(databaseUrl));
+  const shouldCloseClient = !options.client;
 
   await client.connect();
 
@@ -51,12 +70,14 @@ async function runMigrations() {
       )
     `);
 
-    const appliedResult = await client.query<{ version: string }>(
-      "SELECT version FROM schema_migrations",
+    const appliedResult = await client.query("SELECT version FROM schema_migrations");
+    const appliedVersions = new Set(
+      appliedResult.rows
+        .map((row) => row.version)
+        .filter((version): version is string => Boolean(version)),
     );
-    const appliedVersions = new Set(appliedResult.rows.map((row) => row.version));
 
-    for (const migrationFile of await readMigrations()) {
+    for (const migrationFile of await readMigrations(migrationsDir)) {
       if (appliedVersions.has(migrationFile)) {
         continue;
       }
@@ -66,7 +87,7 @@ async function runMigrations() {
       await client.query("INSERT INTO schema_migrations (version) VALUES ($1)", [
         migrationFile,
       ]);
-      console.log(`Applied migration ${migrationFile}`);
+      logger.log(`Applied migration ${migrationFile}`);
     }
 
     await client.query("COMMIT");
@@ -74,11 +95,24 @@ async function runMigrations() {
     await client.query("ROLLBACK");
     throw error;
   } finally {
-    await client.end();
+    if (shouldCloseClient) {
+      await client.end();
+    }
   }
 }
 
-runMigrations().catch((error: unknown) => {
-  console.error("Database migration failed", error);
-  process.exitCode = 1;
-});
+async function readMigrations(migrationsDir: string) {
+  const entries = await fs.readdir(migrationsDir, { withFileTypes: true });
+
+  return entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".sql"))
+    .map((entry) => entry.name)
+    .sort();
+}
+
+if (path.resolve(process.argv[1] ?? "") === currentFile) {
+  runMigrations().catch((error: unknown) => {
+    console.error("Database migration failed", error);
+    process.exitCode = 1;
+  });
+}
