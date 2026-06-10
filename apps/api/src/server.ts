@@ -100,11 +100,48 @@ function serializeStartupError(error: unknown): unknown {
   if (error instanceof Error) {
     return {
       name: error.name,
+      code: readStartupErrorCode(error),
       message: error.message,
+      httpStatus: readStartupHttpStatus(error),
       stack: error.stack,
-      cause: "cause" in error ? error.cause : undefined,
+      cause: "cause" in error ? serializeStartupError(error.cause) : undefined,
     };
   }
 
   return error;
+}
+
+function readStartupErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") {
+    return undefined;
+  }
+
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+}
+
+function readStartupHttpStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== "object") {
+    return undefined;
+  }
+
+  const candidate = error as {
+    status?: unknown;
+    statusCode?: unknown;
+    $metadata?: { httpStatusCode?: unknown };
+  };
+
+  if (typeof candidate.status === "number") {
+    return candidate.status;
+  }
+
+  if (typeof candidate.statusCode === "number") {
+    return candidate.statusCode;
+  }
+
+  if (typeof candidate.$metadata?.httpStatusCode === "number") {
+    return candidate.$metadata.httpStatusCode;
+  }
+
+  return undefined;
 }
